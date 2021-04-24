@@ -1,12 +1,17 @@
 const fs = require('fs');
-const { connect, placeBet, onResult } = require('./services/rouletteClient');
+const { connect, placeBet, onResult, onDisconnected } = require('./services/rouletteClient');
 const { getSecurityToken, getMetaData } = require('./services/authClient');
 
 let { bets } = require('./bets.json');
 let { currentBetIndex } = require('./betCache.json');
 
+const MULTIPLIER = 2;
+
+onDisconnected(function() {
+  process.exit(1);
+});
+
 onResult(function(result) {
-  console.log(result);
   console.log('Result:', result.coin);
   if (result.coin !== 'bonus') {
     currentBetIndex++;
@@ -18,11 +23,11 @@ onResult(function(result) {
   fs.writeFileSync('./betCache.json', JSON.stringify({ currentBetIndex }));
 
   setTimeout(() => {
-    placeBet('bonus', bets[currentBetIndex], result.nextRound);
+    placeBet('bonus', bets[currentBetIndex] * MULTIPLIER, result.nextRound);
   }, 15000);
 });
 
-(async function () {
+async function run() {
   console.log("Getting meta data...");
   const metaData = await getMetaData();
 
@@ -31,4 +36,6 @@ onResult(function(result) {
   
   console.log("Connecting...");
   connect(metaData, securityToken);
-})();
+}
+
+run();

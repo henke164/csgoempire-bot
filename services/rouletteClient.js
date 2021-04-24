@@ -1,15 +1,14 @@
-const WebSocketClient = require('websocket').client;
 const { getRank } = require('./rankProvider');
 const credentials = require('../credentials.json');
-
-const client = new WebSocketClient();
 
 let sid = "";
 let joined = false;
 let onResultCallback;
+let onDisconnectedCallback;
 let connection;
 let authenticated = false;
 
+let reconnectAt;
 let securityToken;
 let meta;
 
@@ -56,10 +55,18 @@ function placeBet(coin, amount, round) {
 
   console.log(`Betting ${amount} on ${coin}`);
   connection.sendUTF(`42/roulette,["place bet",${JSON.stringify(betObj)}]`);
+
+  if (Date.now() > reconnectAt && onDisconnectedCallback) {
+    onDisconnectedCallback();
+  }
 }
 
 function onResult(callback) {
   onResultCallback = callback;
+}
+
+function onDisconnected(callback) {
+  onDisconnectedCallback = callback;
 }
 
 function handleRoulettePackage(key, value) {
@@ -77,57 +84,67 @@ function handleRoulettePackage(key, value) {
   }
 }
 
-client.on('connectFailed', function (error) {
-  console.log('Connect Error: ' + error.toString());
-});
-
-client.on('connect', function (conn) {
-  connection = conn;
-
-  console.log('Client Connected');
-
-  connection.on('error', function (error) {
-    console.log("Connection Error: " + error.toString());
-  });
-
-  connection.on('close', function () {
-    console.log('Connection Closed');
-  });
-
-  connection.on('message', function (message) {
-    var resp = message.utf8Data;
-    if (!sid) {
-      var json = JSON.parse(resp.substr(1, resp.length - 1));
-      sid = json.sid;
-      console.log(sid);
-    }
-
-    if (!joined) {
-      joined = true;
-      connection.sendUTF('40/roulette,');
-    }
-
-    if (resp.indexOf('42/roulette,') === 0) {
-      const package = JSON.parse(resp.replace('42/roulette,', ''));
-      handleRoulettePackage(package[0], package[1]);
-    }
-  });
-
-  ping();
-});
-
 function connect(metaData, token) {
   meta = metaData;
   securityToken = token;
 
+  const WebSocketClient = require('websocket').client;
+
+  const client = new WebSocketClient();
+
+  client.on('connectFailed', function (error) {
+    console.log('Connect Error: ' + error.toString());
+  });
+  
+  client.on('connect', function (conn) {
+    connection = conn;
+  
+    console.log('Client Connected');
+  
+    connection.on('error', function (error) {
+      console.log("Connection Error: " + error.toString());
+    });
+  
+    connection.on('close', function () {
+      console.log('Connection Closed');
+      if (onDisconnectedCallback) {
+        onDisconnectedCallback();
+      }
+    });
+  
+    connection.on('message', function (message) {
+      var resp = message.utf8Data;
+      if (!sid) {
+        var json = JSON.parse(resp.substr(1, resp.length - 1));
+        sid = json.sid;
+        console.log(sid);
+      }
+  
+      if (!joined) {
+        joined = true;
+        connection.sendUTF('40/roulette,');
+      }
+  
+      if (resp.indexOf('42/roulette,') === 0) {
+        const package = JSON.parse(resp.replace('42/roulette,', ''));
+        handleRoulettePackage(package[0], package[1]);
+      }
+    });
+  
+    ping();
+  });
+  
   client.connect('wss://roulette.csgoempire.com/s/?EIO=3&transport=websocket', 'echo-protocol', 'https://csgoempire.com', {
     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/89.0.4389.128 Safari/537.36',
     'Host': 'roulette.csgoempire.com'
   });
+
+  reconnectAt = Date.now() + 60000 * 5;
 }
 
 module.exports = {
   connect,
   placeBet,
-  onResult
+  onResult,
+  onDisconnected,
 }
