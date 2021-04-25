@@ -50,7 +50,7 @@ function placeBet(coin, amount, round) {
     steam_name: user.steam_name,
     ts: Date.now(),
     uid: user.id,
-    user_id: user.sessions[0].user_id
+    user_id: user.id
   };
 
   console.log(`Betting ${amount} on ${coin}`);
